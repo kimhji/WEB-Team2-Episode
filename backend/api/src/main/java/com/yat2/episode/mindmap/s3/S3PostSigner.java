@@ -42,11 +42,15 @@ public class S3PostSigner {
                               ? ((AwsSessionCredentials) credentials).sessionToken() : null;
 
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
+
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
+
+        String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
 
-        String policyJson = createPolicyJson(bucket, key, credential, xAmzDate, sessionToken, now);
+        String policyJson = createPolicyJson(bucket, key, credential, xAmzDate, sessionToken, expiration);
 
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
 
@@ -69,17 +73,14 @@ public class S3PostSigner {
     }
 
     private String createPolicyJson(String bucket, String key, String credential, String xAmzDate, String sessionToken,
-                                    ZonedDateTime now) {
+                                    String expiration) {
         try {
             Map<String, Object> policy = new LinkedHashMap<>();
-            // 밀리초를 제외한 ISO_INSTANT 포맷 (S3 표준)
-            policy.put("expiration", now.plusMinutes(15).format(DateTimeFormatter.ISO_INSTANT));
+            policy.put("expiration", expiration);
 
             List<Object> conditions = new ArrayList<>();
             conditions.add(Map.of("bucket", bucket));
-
             conditions.add(Map.of("key", key));
-
             conditions.add(Map.of("x-amz-algorithm", "AWS4-HMAC-SHA256"));
             conditions.add(Map.of("x-amz-credential", credential));
             conditions.add(Map.of("x-amz-date", xAmzDate));
