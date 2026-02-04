@@ -1,8 +1,5 @@
 package com.yat2.episode.mindmap.s3;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yat2.episode.global.exception.CustomException;
 import com.yat2.episode.global.exception.ErrorCode;
 import com.yat2.episode.mindmap.s3.dto.S3UploadFieldsDto;
@@ -16,16 +13,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Component
 @RequiredArgsConstructor
 public class S3PostSigner {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final ObjectMapper compactMapper = new ObjectMapper()
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
     private final S3Properties s3Properties;
 
     public S3UploadResponseDto generatePostFields(String bucket, String key, String region, String endpoint,
@@ -36,14 +29,19 @@ public class S3PostSigner {
         String sessionToken = (credentials instanceof AwsSessionCredentials)
                               ? ((AwsSessionCredentials) credentials).sessionToken() : null;
 
-        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC"));
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
-
         String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
-        String policyJson = createPolicyJson(bucket, key, credential, xAmzDate, sessionToken, expiration);
+
+        // 1. Policy JSON을 수동 문자열 조립으로 생성 (공백 제거 및 규격 고정)
+        String policyJson = buildRawPolicyJson(bucket, key, credential, xAmzDate, sessionToken, expiration);
+
+        // 2. Base64 인코딩
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
+
+        // 3. 서명 계산
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
         String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint + "/" + bucket :
@@ -54,36 +52,26 @@ public class S3PostSigner {
         ));
     }
 
-    private String createPolicyJson(String bucket, String key, String credential, String xAmzDate,
-                                    String sessionToken, String expiration) {
-        try {
-            Map<String, Object> policy = new LinkedHashMap<>();
-            policy.put("expiration", expiration);
+    private String buildRawPolicyJson(String bucket, String key, String credential, String xAmzDate,
+                                      String sessionToken, String expiration) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"expiration\":\"").append(expiration).append("\",");
+        sb.append("\"conditions\":[");
+        sb.append("{\"bucket\":\"").append(bucket).append("\"},");
+        sb.append("{\"key\":\"").append(key).append("\"},");
+        sb.append("{\"x-amz-algorithm\":\"AWS4-HMAC-SHA256\"},");
+        sb.append("{\"x-amz-credential\":\"").append(credential).append("\"},");
+        sb.append("{\"x-amz-date\":\"").append(xAmzDate).append("\"}");
 
-            List<Object> conditions = new ArrayList<>();
-            conditions.add(makeMap("bucket", bucket));
-            conditions.add(makeMap("key", key));
-            conditions.add(makeMap("x-amz-algorithm", "AWS4-HMAC-SHA256"));
-            conditions.add(makeMap("x-amz-credential", credential));
-            conditions.add(makeMap("x-amz-date", xAmzDate));
-
-            if (sessionToken != null && !sessionToken.isEmpty()) {
-                conditions.add(makeMap("x-amz-security-token", sessionToken));
-            }
-
-            conditions.add(Arrays.asList("content-length-range", 0, s3Properties.getMaxUploadSize()));
-
-            policy.put("conditions", conditions);
-            return compactMapper.writeValueAsString(policy);
-        } catch (JsonProcessingException e) {
-            throw new CustomException(ErrorCode.S3_URL_FAIL);
+        if (sessionToken != null && !sessionToken.isEmpty()) {
+            sb.append(",{\"x-amz-security-token\":\"").append(sessionToken).append("\"}");
         }
-    }
 
-    private Map<String, String> makeMap(String k, String v) {
-        Map<String, String> m = new HashMap<>();
-        m.put(k, v);
-        return m;
+        sb.append(",[\"content-length-range\",0,").append(s3Properties.getMaxUploadSize()).append("]");
+        sb.append("]}");
+
+        return sb.toString();
     }
 
     private String calculateSignature(String stringToSign, String secret, String dateStamp, String region) {
