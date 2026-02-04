@@ -104,8 +104,7 @@ public class MindmapController {
 
     })
     @PostMapping()
-    public ResponseEntity<MindmapCreatedWithUrlDto> createMindmap(@RequestAttribute(USER_ID) long userId,
-                                                                  @RequestBody MindmapArgsReqDto reqBody) {
+    public ResponseEntity<MindmapCreatedWithUrlDto> createMindmap() {
         UUID uuid = UuidCreator.getTimeOrderedEpoch();
         S3UploadResponseDto presignedData = mindmapService.getUploadInfo(uuid);
         //MindmapDataExceptDateDto mindmapData = mindmapService.saveMindmapAndParticipant(userId, reqBody, uuid);
