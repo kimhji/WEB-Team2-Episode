@@ -39,12 +39,10 @@ public class S3PostSigner {
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
+
         String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
-
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
-
         String policyJson = createPolicyJson(bucket, key, credential, xAmzDate, sessionToken, expiration);
-
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
@@ -63,15 +61,14 @@ public class S3PostSigner {
             policy.put("expiration", expiration);
 
             List<Object> conditions = new ArrayList<>();
-
-            conditions.add(createEntry("bucket", bucket));
-            conditions.add(createEntry("key", key));
-            conditions.add(createEntry("x-amz-algorithm", "AWS4-HMAC-SHA256"));
-            conditions.add(createEntry("x-amz-credential", credential));
-            conditions.add(createEntry("x-amz-date", xAmzDate));
+            conditions.add(makeMap("bucket", bucket));
+            conditions.add(makeMap("key", key));
+            conditions.add(makeMap("x-amz-algorithm", "AWS4-HMAC-SHA256"));
+            conditions.add(makeMap("x-amz-credential", credential));
+            conditions.add(makeMap("x-amz-date", xAmzDate));
 
             if (sessionToken != null && !sessionToken.isEmpty()) {
-                conditions.add(createEntry("x-amz-security-token", sessionToken));
+                conditions.add(makeMap("x-amz-security-token", sessionToken));
             }
 
             conditions.add(Arrays.asList("content-length-range", 0, s3Properties.getMaxUploadSize()));
@@ -83,10 +80,10 @@ public class S3PostSigner {
         }
     }
 
-    private Map<String, String> createEntry(String k, String v) {
-        Map<String, String> map = new HashMap<>();
-        map.put(k, v);
-        return map;
+    private Map<String, String> makeMap(String k, String v) {
+        Map<String, String> m = new HashMap<>();
+        m.put(k, v);
+        return m;
     }
 
     private String calculateSignature(String stringToSign, String secret, String dateStamp, String region) {
