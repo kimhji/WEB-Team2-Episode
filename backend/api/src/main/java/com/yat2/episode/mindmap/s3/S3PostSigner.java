@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Component
@@ -29,14 +30,17 @@ public class S3PostSigner {
         String sessionToken = (credentials instanceof AwsSessionCredentials)
                               ? ((AwsSessionCredentials) credentials).sessionToken() : null;
 
-        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC"));
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
+
+        // S3 Post Policy에서 요구하는 두 가지 날짜 형식 (매우 중요)
+        String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")); // Basic ISO (Basic)
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
-        String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+        String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")); // ISO 8601 (Full)
+
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
 
-        // 1. Policy JSON을 수동 문자열 조립으로 생성 (공백 제거 및 규격 고정)
-        String policyJson = buildRawPolicyJson(bucket, key, credential, xAmzDate, sessionToken, expiration);
+        // 1. Policy JSON 수동 조립 (공백 제거)
+        String policyJson = buildPolicy(bucket, key, credential, xAmzDate, sessionToken, expiration);
 
         // 2. Base64 인코딩
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
@@ -52,8 +56,8 @@ public class S3PostSigner {
         ));
     }
 
-    private String buildRawPolicyJson(String bucket, String key, String credential, String xAmzDate,
-                                      String sessionToken, String expiration) {
+    private String buildPolicy(String bucket, String key, String credential, String xAmzDate,
+                               String sessionToken, String expiration) {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"expiration\":\"").append(expiration).append("\",");
@@ -70,7 +74,6 @@ public class S3PostSigner {
 
         sb.append(",[\"content-length-range\",0,").append(s3Properties.getMaxUploadSize()).append("]");
         sb.append("]}");
-
         return sb.toString();
     }
 
