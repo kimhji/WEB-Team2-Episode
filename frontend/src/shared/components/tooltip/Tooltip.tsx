@@ -1,6 +1,5 @@
+import useToggle from "@shared/hooks/useToggla";
 import { ReactNode } from "react";
-
-import useToggle from "@/shared/hooks/useToggle";
 
 type Props = {
     children: ReactNode;
