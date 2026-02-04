@@ -30,25 +30,25 @@ public class S3PostSigner {
         String sessionToken = (credentials instanceof AwsSessionCredentials)
                               ? ((AwsSessionCredentials) credentials).sessionToken() : null;
 
+        // 1. 모든 날짜 포맷을 초 단위로 고정 (나노초 오차 방지)
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
-
-        // S3 Post Policy에서 요구하는 두 가지 날짜 형식 (매우 중요)
-        String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")); // Basic ISO (Basic)
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")); // ISO 8601 (Full)
+        String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
+        String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
 
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
 
-        // 1. Policy JSON 수동 조립 (공백 제거)
+        // 2. Policy JSON 수동 조립 (공백 제거 및 규격 고정)
         String policyJson = buildPolicy(bucket, key, credential, xAmzDate, sessionToken, expiration);
 
-        // 2. Base64 인코딩
+        // 3. Base64 인코딩
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
 
-        // 3. 서명 계산
+        // 4. 서명 계산 (Base64된 문자열을 원본 데이터로 사용)
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
-        String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint + "/" + bucket :
+        // 5. Action URL 결정
+        String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint :
                            "https://" + bucket + ".s3." + region + ".amazonaws.com";
 
         return new S3UploadResponseDto(actionUrl, new S3UploadFieldsDto(
