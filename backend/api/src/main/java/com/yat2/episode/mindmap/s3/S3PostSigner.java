@@ -47,6 +47,9 @@ public class S3PostSigner {
         // 4. 서명 계산 (Base64된 문자열을 원본 데이터로 사용)
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
+        System.out.println("DEBUG_POLICY_JSON: " + policyJson);
+        System.out.println("DEBUG_SIGNATURE: " + signature);
+
         // 5. Action URL 결정
         String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint :
                            "https://" + bucket + ".s3." + region + ".amazonaws.com";
