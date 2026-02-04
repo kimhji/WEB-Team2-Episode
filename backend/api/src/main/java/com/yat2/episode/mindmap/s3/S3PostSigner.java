@@ -25,12 +25,11 @@ public class S3PostSigner {
     public S3UploadResponseDto generatePostFields(String bucket, String key, String region, String endpoint,
                                                   AwsCredentials credentials) {
 
-        String accessKey = credentials.accessKeyId();
-        String secretKey = credentials.secretAccessKey();
+        String accessKey = credentials.accessKeyId().trim();
+        String secretKey = credentials.secretAccessKey().trim();
         String sessionToken = (credentials instanceof AwsSessionCredentials)
-                              ? ((AwsSessionCredentials) credentials).sessionToken() : null;
+                              ? ((AwsSessionCredentials) credentials).sessionToken().trim() : null;
 
-        // 1. 모든 날짜 포맷을 초 단위로 고정 (나노초 오차 방지)
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
@@ -38,19 +37,15 @@ public class S3PostSigner {
 
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
 
-        // 2. Policy JSON 수동 조립 (공백 제거 및 규격 고정)
         String policyJson = buildPolicy(bucket, key, credential, xAmzDate, sessionToken, expiration);
 
-        // 3. Base64 인코딩
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
 
-        // 4. 서명 계산 (Base64된 문자열을 원본 데이터로 사용)
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
         System.out.println("DEBUG_POLICY_JSON: " + policyJson);
         System.out.println("DEBUG_SIGNATURE: " + signature);
 
-        // 5. Action URL 결정
         String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint :
                            "https://" + bucket + ".s3." + region + ".amazonaws.com";
 
@@ -64,18 +59,21 @@ public class S3PostSigner {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"expiration\":\"").append(expiration).append("\",");
+
         sb.append("\"conditions\":[");
+
         sb.append("{\"bucket\":\"").append(bucket).append("\"},");
         sb.append("{\"key\":\"").append(key).append("\"},");
         sb.append("{\"x-amz-algorithm\":\"AWS4-HMAC-SHA256\"},");
         sb.append("{\"x-amz-credential\":\"").append(credential).append("\"},");
         sb.append("{\"x-amz-date\":\"").append(xAmzDate).append("\"}");
 
-        if (sessionToken != null && !sessionToken.isEmpty()) {
-            sb.append(",{\"x-amz-security-token\":\"").append(sessionToken).append("\"}");
+        if (sessionToken != null && !sessionToken.trim().isEmpty()) {
+            sb.append(",{\"x-amz-security-token\":\"").append(sessionToken.trim()).append("\"}");
         }
 
         sb.append(",[\"content-length-range\",0,").append(s3Properties.getMaxUploadSize()).append("]");
+
         sb.append("]}");
         return sb.toString();
     }
