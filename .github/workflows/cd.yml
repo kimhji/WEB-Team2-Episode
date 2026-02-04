@@ -1,13 +1,21 @@
 name: CD
 
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 on:
+  workflow_dispatch:
   push:
-    branches: [release]
+    branches: [ release ]
     paths:
       - "backend/**"
+      - "infra/prod/**"
+      - ".github/workflows/cd.yml"
 
 jobs:
   deploy:
+    name: Deploy
     runs-on: ubuntu-latest
 
     permissions:
@@ -44,13 +52,14 @@ jobs:
 
       - name: Build & Push Image
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/episode-api
+          # 본인의 GHCR 계정명에 맞게 설정 (kimhji)
+          IMAGE=ghcr.io/kimhji/episode-api
           TAG=${GITHUB_SHA::7}
 
           docker buildx build \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --platform linux/arm64 \
+            --platform linux/amd64 \
             -t $IMAGE:$TAG \
             -t $IMAGE:latest \
             --push .
@@ -62,26 +71,37 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Sync infra files to server
+        working-directory: .
+        run: |
+          # Caddyfile 제외, docker-compose.yml 위주로 전송
+          rsync -avz --delete \
+            --exclude='.env' \
+            infra/prod/ \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/app/
+
       - name: Deploy via SSH
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
-
             cd /home/${{ secrets.EC2_USER }}/app
 
-            docker pull ghcr.io/${{ github.repository_owner }}/episode-api:latest
+            # 새로운 이미지 pull 및 컨테이너 재시작
+            docker compose pull
             docker compose up -d
-
-            docker image prune -f
+          
+            echo "Spring Boot server has been restarted."
           EOF
 
       - name: Health check
+        id: health_check
         run: |
           set -e
-          URL="https://api.episode.io.kr/actuator/health"
+          # 도메인이 연결되지 않았다면 EC2_HOST 아이피로 변경 가능
+          URL="http://${{ secrets.EC2_HOST }}:8080/actuator/health"
 
-          echo "Checking health:"
-          for i in $(seq 1 30); do
+          echo "Checking health at $URL"
+          for i in $(seq 1 20); do
             resp="$(curl -sS --max-time 5 -w "\n%{http_code}" "$URL" || true)"
             body="$(echo "$resp" | head -n 1)"
             code="$(echo "$resp" | tail -n 1)"
@@ -89,12 +109,19 @@ jobs:
             echo "try=$i http=$code body=$body"
 
             if [ "$code" = "200" ] && echo "$body" | grep -q '"status":"UP"'; then
-              echo "Health is UP"
+              echo "Server is UP"
               exit 0
             fi
-
             sleep 5
           done
 
           echo "Health check failed"
           exit 1
+
+      - name: Cleanup Images
+        if: always()
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            # 사용하지 않는 예전 이미지 삭제
+            docker image prune -f
+          EOF
