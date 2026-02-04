@@ -108,9 +108,9 @@ public class MindmapController {
                                                                   @RequestBody MindmapArgsReqDto reqBody) {
         UUID uuid = UuidCreator.getTimeOrderedEpoch();
         S3UploadResponseDto presignedData = mindmapService.getUploadInfo(uuid);
-        MindmapDataExceptDateDto mindmapData = mindmapService.saveMindmapAndParticipant(userId, reqBody, uuid);
-        MindmapCreatedWithUrlDto resBody = new MindmapCreatedWithUrlDto(mindmapData, presignedData);
-        URI location = mindmapService.getCreatedURI(resBody.mindmap().mindmapId());
+        //MindmapDataExceptDateDto mindmapData = mindmapService.saveMindmapAndParticipant(userId, reqBody, uuid);
+        MindmapCreatedWithUrlDto resBody = new MindmapCreatedWithUrlDto(null, presignedData);
+        URI location = null;//mindmapService.getCreatedURI(resBody.mindmap().mindmapId());
         return ResponseEntity.created(location).body(resBody);
     }
 
