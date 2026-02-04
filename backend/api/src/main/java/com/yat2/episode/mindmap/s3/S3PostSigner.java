@@ -1,7 +1,9 @@
 package com.yat2.episode.mindmap.s3;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.yat2.episode.global.exception.CustomException;
 import com.yat2.episode.global.exception.ErrorCode;
 import com.yat2.episode.mindmap.s3.dto.S3UploadFieldsDto;
@@ -17,13 +19,18 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Component
 @RequiredArgsConstructor
 public class S3PostSigner {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final ObjectMapper compactMapper = new ObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+
     private final S3Properties s3Properties;
 
     public S3UploadResponseDto generatePostFields(String bucket, String key, String region, String endpoint,
@@ -31,11 +38,10 @@ public class S3PostSigner {
 
         String accessKey = credentials.accessKeyId();
         String secretKey = credentials.secretAccessKey();
-        String sessionToken =
-                (credentials instanceof AwsSessionCredentials) ? ((AwsSessionCredentials) credentials).sessionToken() :
-                        null;
+        String sessionToken = (credentials instanceof AwsSessionCredentials)
+                              ? ((AwsSessionCredentials) credentials).sessionToken() : null;
 
-        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC"));
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("UTC")).truncatedTo(ChronoUnit.SECONDS);
         String dateStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
         String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
@@ -43,11 +49,11 @@ public class S3PostSigner {
         String policyJson = createPolicyJson(bucket, key, credential, xAmzDate, sessionToken, now);
 
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
+
         String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
-
         String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint + "/" + bucket :
-                "https://" + bucket + ".s3." + region + ".amazonaws.com";
+                           "https://" + bucket + ".s3." + region + ".amazonaws.com";
 
         S3UploadFieldsDto fields = new S3UploadFieldsDto(
                 key,
@@ -66,23 +72,27 @@ public class S3PostSigner {
                                     ZonedDateTime now) {
         try {
             Map<String, Object> policy = new LinkedHashMap<>();
-            policy.put("expiration", now.plusMinutes(10).format(DateTimeFormatter.ISO_INSTANT));
+            // 밀리초를 제외한 ISO_INSTANT 포맷 (S3 표준)
+            policy.put("expiration", now.plusMinutes(15).format(DateTimeFormatter.ISO_INSTANT));
 
             List<Object> conditions = new ArrayList<>();
             conditions.add(Map.of("bucket", bucket));
-            conditions.add(List.of("starts-with", "$key", key));
+
+            conditions.add(Map.of("key", key));
+
             conditions.add(Map.of("x-amz-algorithm", "AWS4-HMAC-SHA256"));
             conditions.add(Map.of("x-amz-credential", credential));
             conditions.add(Map.of("x-amz-date", xAmzDate));
 
-            if (sessionToken != null) {
+            if (sessionToken != null && !sessionToken.isEmpty()) {
                 conditions.add(Map.of("x-amz-security-token", sessionToken));
             }
 
             conditions.add(List.of("content-length-range", 0, s3Properties.getMaxUploadSize()));
 
             policy.put("conditions", conditions);
-            return objectMapper.writeValueAsString(policy);
+
+            return compactMapper.writeValueAsString(policy);
         } catch (JsonProcessingException e) {
             throw new CustomException(ErrorCode.S3_URL_FAIL);
         }
