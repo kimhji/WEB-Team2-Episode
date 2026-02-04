@@ -2,6 +2,7 @@ package com.yat2.episode.mindmap;
 
 import com.github.f4b6a3.uuid.UuidCreator;
 import com.yat2.episode.auth.AuthService;
+import com.yat2.episode.auth.security.Public;
 import com.yat2.episode.global.exception.ErrorCode;
 import com.yat2.episode.global.exception.ErrorResponse;
 import com.yat2.episode.global.swagger.ApiErrorCodes;
@@ -28,6 +29,7 @@ import java.util.UUID;
 import static com.yat2.episode.global.constant.RequestAttrs.USER_ID;
 
 
+@Public
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/mindmap")
