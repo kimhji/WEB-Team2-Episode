@@ -22,7 +22,7 @@ public class S3PostSigner {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private final S3Properties s3Properties;
 
-    public S3UploadResponseDto generatePostFields(String key,
+    public S3UploadResponseDto generatePostFields(String bucket, String key, String region, String endpoint,
                                                   AwsCredentials credentials) {
 
         String accessKey = credentials.accessKeyId().trim();
@@ -35,19 +35,19 @@ public class S3PostSigner {
         String xAmzDate = now.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
         String expiration = now.plusMinutes(15).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"));
 
-        String credential = accessKey + "/" + dateStamp + "/" + s3Properties.getRegion() + "/s3/aws4_request";
+        String credential = accessKey + "/" + dateStamp + "/" + region + "/s3/aws4_request";
 
-        String policyJson = buildPolicy(s3Properties.getBucket().getName(), key, credential, xAmzDate, sessionToken, expiration);
+        String policyJson = buildPolicy(bucket, key, credential, xAmzDate, sessionToken, expiration);
 
         String policyBase64 = Base64.getEncoder().encodeToString(policyJson.getBytes(StandardCharsets.UTF_8));
 
-        String signature = calculateSignature(policyBase64, secretKey, dateStamp, s3Properties.getRegion());
+        String signature = calculateSignature(policyBase64, secretKey, dateStamp, region);
 
         System.out.println("DEBUG_POLICY_JSON: " + policyJson);
         System.out.println("DEBUG_SIGNATURE: " + signature);
 
-        String actionUrl = (s3Properties.getEndpoint() != null && !s3Properties.getEndpoint().isEmpty()) ? s3Properties.getEndpoint() :
-                           "https://" + s3Properties.getBucket().getName() + ".s3." + s3Properties.getRegion() + ".amazonaws.com";
+        String actionUrl = (endpoint != null && !endpoint.isEmpty()) ? endpoint :
+                           "https://" + bucket + ".s3." + region + ".amazonaws.com";
 
         return new S3UploadResponseDto(actionUrl, new S3UploadFieldsDto(
                 key, "AWS4-HMAC-SHA256", credential, xAmzDate, sessionToken, policyBase64, signature
