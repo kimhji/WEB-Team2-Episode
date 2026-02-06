@@ -1,5 +1,7 @@
 package com.yat2.episode.mindmap.s3;
 
+import com.yat2.episode.global.exception.CustomException;
+import com.yat2.episode.global.exception.ErrorCode;
 import com.yat2.episode.mindmap.s3.dto.S3UploadResponseDto;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
@@ -23,8 +25,13 @@ public class S3SnapshotRepository {
     }
 
     public S3UploadResponseDto createPresignedUploadInfo(String objectKey) {
-        AwsCredentials credentials = credentialsProvider.resolveCredentials();
+        try {
+            AwsCredentials credentials = credentialsProvider.resolveCredentials();
 
-        return s3PostSigner.generatePostFields(bucketName, objectKey, region, endpoint, credentials);
+            return s3PostSigner.generatePostFields(objectKey, credentials);
+        }
+        catch (Exception e){
+            throw new CustomException(ErrorCode.S3_URL_FAIL);
+        }
     }
 }
