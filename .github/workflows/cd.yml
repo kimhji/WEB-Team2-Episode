@@ -59,7 +59,7 @@ jobs:
           docker buildx build \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             -t $IMAGE:$TAG \
             -t $IMAGE:latest \
             --push .
